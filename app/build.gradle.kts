@@ -444,6 +444,13 @@ dependencies {
     implementation(files("libs/nextlib-mediainfo-local.aar"))
     implementation("io.github.abdallahmehiz:mpv-android-lib:0.1.12")
 
+    // JavaScript plugin runtime: QuickJS engine (local AAR with the bytecode-compile API), HTML parser for the
+    // cheerio bridge, JSON bridge, and the crypto-js library scrapers expect as `require("crypto-js")`.
+    implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+    implementation(libs.jsoup)
+    implementation(libs.gson)
+    implementation(libs.crypto.js)
+
     // Markdown rendering
     implementation(libs.markdown.renderer.m3)
 
@@ -470,8 +477,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
-    // createComposeRule's host activity, merged into the debug APK only.
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    androidTestImplementation(libs.mockwebserver)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("io.mockk:mockk:1.13.12")

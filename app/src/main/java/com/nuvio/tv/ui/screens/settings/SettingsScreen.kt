@@ -209,6 +209,7 @@ fun SettingsScreen(
     entryRelease: () -> Int? = { null },
     onEntryConsumed: () -> Unit = {},
     onNavigateToAddons: () -> Unit = {},
+    onNavigateToPlugins: () -> Unit = {},
     onNavigateToCatalogOrder: () -> Unit = {},
     onNavigateToCollections: () -> Unit = {},
     onNavigateToAuthQrSignIn: () -> Unit = {},
@@ -492,6 +493,7 @@ fun SettingsScreen(
                     onNavigateToManageProfiles = onNavigateToManageProfiles,
                     onNavigateToDpadComboSetup = onNavigateToDpadComboSetup,
                     onNavigateToAddons = onNavigateToAddons,
+                    onNavigateToPlugins = onNavigateToPlugins,
                     onNavigateToCatalogOrder = onNavigateToCatalogOrder,
                     onNavigateToCollections = onNavigateToCollections,
                     onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn
@@ -587,6 +589,7 @@ private fun SettingsDetailPane(
     onNavigateToManageProfiles: () -> Unit,
     onNavigateToDpadComboSetup: (String) -> Unit,
     onNavigateToAddons: () -> Unit,
+    onNavigateToPlugins: () -> Unit,
     onNavigateToCatalogOrder: () -> Unit,
     onNavigateToCollections: () -> Unit,
     onNavigateToAuthQrSignIn: () -> Unit
@@ -605,6 +608,7 @@ private fun SettingsDetailPane(
         SettingsCategory.LAYOUT -> LayoutSettingsContent(initialFocusRequester = initialFocusRequester)
         SettingsCategory.CONTENT_DISCOVERY -> ContentDiscoverySettingsContent(
             onNavigateToAddons = onNavigateToAddons,
+            onNavigateToPlugins = onNavigateToPlugins,
             onNavigateToCatalogOrder = onNavigateToCatalogOrder,
             onNavigateToCollections = onNavigateToCollections,
             initialFocusRequester = initialFocusRequester

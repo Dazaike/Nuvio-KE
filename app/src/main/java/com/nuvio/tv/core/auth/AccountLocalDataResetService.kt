@@ -19,6 +19,9 @@ import kotlinx.coroutines.withContext
 
 private const val ACCOUNT_RESET_TAG = "AccountDataReset"
 
+/** The per-profile directories of downloaded plugin scripts (`plugin_code`, `plugin_code_p2`, ...). */
+private val PLUGIN_CODE_DIR_REGEX = Regex("""^plugin_code(_p\d+)?$""")
+
 @Singleton
 class AccountLocalDataResetService @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -61,8 +64,11 @@ class AccountLocalDataResetService @Inject constructor(
         }
     }
 
-    // Leftovers of cut features (plugin_code*, cs_extensions) are swept by
-    // LegacyFeatureDataCleanup at app start, not here.
+    // Leftovers of the cut CloudStream extensions (cs_extensions) are swept by
+    // LegacyFeatureDataCleanup at app start, not here. Downloaded plugin scripts belong to the
+    // signed-out account (their repository list is profile data and is wiped with it): a
+    // different account must not inherit third-party code it never installed.
     private fun isAccountFile(file: File): Boolean =
-        file.name == ContinueWatchingEnrichmentCache.CACHE_DIR_NAME
+        file.name == ContinueWatchingEnrichmentCache.CACHE_DIR_NAME ||
+            file.name.matches(PLUGIN_CODE_DIR_REGEX)
 }

@@ -376,7 +376,9 @@ class StreamRepositoryFanOutCompletionTest {
                 api = api,
                 addonRepository = addonRepository,
                 profileManager = profileManager,
-                healthStore = mockk(relaxed = true)
+                healthStore = mockk(relaxed = true),
+                pluginManager = pluginManagerWithoutPlugins(),
+                tmdbService = mockk(relaxed = true)
             ),
             api = api
         )

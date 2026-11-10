@@ -22,6 +22,7 @@ import com.nuvio.tv.ui.screens.addon.PhoneManageHost
 import com.nuvio.tv.ui.util.requestFocusAfterFrames
 
 private const val ROW_ADDONS = "content_addons"
+private const val ROW_PLUGINS = "content_plugins"
 private const val ROW_CATALOG_ORDER = "content_catalog_order"
 private const val ROW_COLLECTIONS = "content_collections"
 private const val ROW_PHONE = "content_phone"
@@ -34,6 +35,7 @@ private const val ROW_PHONE = "content_phone"
 @Composable
 internal fun ContentDiscoverySettingsContent(
     onNavigateToAddons: () -> Unit,
+    onNavigateToPlugins: () -> Unit,
     onNavigateToCatalogOrder: () -> Unit,
     onNavigateToCollections: () -> Unit,
     initialFocusRequester: FocusRequester?,
@@ -41,6 +43,7 @@ internal fun ContentDiscoverySettingsContent(
     phoneViewModel: AddonManagerViewModel = hiltViewModel()
 ) {
     val addonsRow = rememberSettingsReturnTarget(ROW_ADDONS)
+    val pluginsRow = rememberSettingsReturnTarget(ROW_PLUGINS)
     val catalogOrderRow = rememberSettingsReturnTarget(ROW_CATALOG_ORDER)
     val collectionsRow = rememberSettingsReturnTarget(ROW_COLLECTIONS)
     val phoneRow = remember { FocusRequester() }
@@ -81,6 +84,19 @@ internal fun ContentDiscoverySettingsContent(
                 modifier = Modifier
                     .focusRequester(addonsRow.requester)
                     .optionalFocusRequester(initialFocusRequester)
+            )
+        }
+        item(key = ROW_PLUGINS) {
+            SettingsValueRow(
+                title = stringResource(R.string.plugins_title),
+                subtitle = stringResource(R.string.plugins_row_subtitle),
+                value = if (state.pluginRepositoryCount == 0) {
+                    stringResource(R.string.plugins_row_value_none)
+                } else {
+                    stringResource(R.string.plugins_row_value_on, state.pluginsOn)
+                },
+                onClick = { pluginsRow.launch(onNavigateToPlugins) },
+                modifier = Modifier.focusRequester(pluginsRow.requester)
             )
         }
         if (state.showCatalogOrder) {

@@ -4,6 +4,7 @@ import android.content.Context
 import com.nuvio.tv.R
 import com.nuvio.tv.data.local.ContinueWatchingEnrichmentCache
 import com.nuvio.tv.data.local.ProfileDataStore
+import com.nuvio.tv.data.local.PLUGIN_CODE_DIR
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
 import com.nuvio.tv.domain.model.UserProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -143,6 +144,9 @@ class ProfileManager @Inject constructor(
         // this a future profile that reuses the id would show this profile's row.
         ContinueWatchingEnrichmentCache.nextUpCacheFile(context.filesDir, profileId).delete()
         ContinueWatchingEnrichmentCache.inProgressCacheFile(context.filesDir, profileId).delete()
+
+        // The profile's downloaded plugin scripts (its repository list went with its datastores above).
+        File(context.filesDir, "${PLUGIN_CODE_DIR}_p$profileId").deleteRecursively()
 
         val suffixWithExtension = "_p${profileId}.preferences_pb"
         // Shadow copies follow ProfileDataStoreFactory.writeShadowCopy's

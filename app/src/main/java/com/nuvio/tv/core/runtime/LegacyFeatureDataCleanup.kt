@@ -17,9 +17,9 @@ import kotlinx.coroutines.withContext
 private const val TAG = "LegacyFeatureCleanup"
 
 // Single home for the on-disk names of cut features (X15). Exact matches only.
+// The JavaScript plugin runtime is a live feature again: its data (plugin_code*, plugin_settings*)
+// is NOT swept. Only the CloudStream/DEX extension leftovers stay cut.
 private const val CS_EXTENSIONS_DIR = "cs_extensions"
-private val PLUGIN_CODE_DIR_REGEX = Regex("""^plugin_code(_p\d+)?$""")
-private val PLUGIN_SETTINGS_STORE_REGEX = Regex("""^plugin_settings(_p\d+)?\.preferences_pb(\.bak)?$""")
 private const val CS3_PLUGIN_PREFS_FILE = "cs3_plugin_preferences.xml"
 
 // Spec 68 X7: the @Api client's cache from the trust-all era (entries fetched unvalidated); the
@@ -82,15 +82,13 @@ internal fun deleteShadowCopyOfEmptiedStore(storeFile: File): Boolean {
 }
 
 /**
- * Deletes the cut plugin runtime's on-disk artifacts (exact names only) and returns the
+ * Deletes the cut CloudStream/DEX extension runtime's on-disk artifacts (exact names only) and returns the
  * bytes freed. Idempotent by existence: a second run finds nothing and frees 0. A failure
  * on one path is logged and the sweep continues.
  */
 internal fun deleteLegacyFeatureFiles(filesDir: File, dataStoreDir: File, sharedPrefsDir: File): Long {
     val targets = buildList {
         add(File(filesDir, CS_EXTENSIONS_DIR))
-        filesDir.listFiles()?.filterTo(this) { PLUGIN_CODE_DIR_REGEX.matches(it.name) }
-        dataStoreDir.listFiles()?.filterTo(this) { PLUGIN_SETTINGS_STORE_REGEX.matches(it.name) }
         add(File(sharedPrefsDir, CS3_PLUGIN_PREFS_FILE))
     }
     return deleteAll(targets)
@@ -120,7 +118,7 @@ private fun deleteAll(targets: List<File>): Long {
 }
 
 /**
- * X15: removes leftovers of cut features (plugin runtime files, stale debrid/MDBList API
+ * X15: removes leftovers of cut features (CloudStream extension files, stale debrid/MDBList API
  * keys) and the pre-X7 `@Api` HTTP cache (Spec 68). Run once per process, delayed and on IO,
  * from NuvioApplication.
  */

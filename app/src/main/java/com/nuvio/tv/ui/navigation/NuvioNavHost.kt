@@ -29,6 +29,7 @@ import com.nuvio.tv.ui.screens.detail.MetaDetailsScreen
 import com.nuvio.tv.ui.screens.home.HomeScreen
 import com.nuvio.tv.ui.screens.addon.AddonManagerScreen
 import com.nuvio.tv.ui.screens.addon.CatalogOrderScreen
+import com.nuvio.tv.ui.screens.plugin.PluginsScreen
 import com.nuvio.tv.ui.screens.library.LibraryScreen
 import com.nuvio.tv.livetv.ui.LiveTvScreen
 import com.nuvio.tv.livetv.ui.LiveTvSourcesScreen
@@ -747,6 +748,7 @@ fun NuvioNavHost(
                     backStackEntry.savedStateHandle[Screen.Settings.ENTRY_RELEASE_KEY] = null
                 },
                 onNavigateToAddons = { navController.navigate(Screen.AddonManager.route) },
+                onNavigateToPlugins = { navController.navigate(Screen.Plugins.route) },
                 onNavigateToCatalogOrder = { navController.navigate(Screen.CatalogOrder.route) },
                 onNavigateToCollections = { navController.navigate(Screen.Collections.route) },
                 onNavigateToAuthQrSignIn = { navController.navigate(Screen.AuthQrSignIn.route) },
@@ -788,6 +790,10 @@ fun NuvioNavHost(
 
         composable(Screen.AddonManager.route) {
             AddonManagerScreen(onBackPress = { navController.popBackStack() })
+        }
+
+        composable(Screen.Plugins.route) {
+            PluginsScreen(onBackPress = { navController.popBackStack() })
         }
 
         composable(Screen.CatalogOrder.route) {
