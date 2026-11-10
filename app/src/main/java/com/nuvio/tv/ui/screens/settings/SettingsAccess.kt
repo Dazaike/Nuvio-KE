@@ -16,7 +16,7 @@ internal object SettingsAccess {
     /**
      * Routes reachable only from gated Settings-family surfaces — the transitive
      * closure of Settings: every in-app entry screen for these routes (Settings,
-     * AddonManager, Collections) is itself in this set, except Home's empty-state
+     * AddonManager, Plugins, Collections) is itself in this set, except Home's empty-state
      * "Open addons", which gates through [isBlockedFromTopBar]. AddonManager is included even
      * though addon-install deep links target it: the install consent dialog
      * still works over the ejected Home. Collections is entered only from
@@ -27,6 +27,7 @@ internal object SettingsAccess {
         Screen.ManageProfiles.route,
         Screen.AuthQrSignIn.route,
         Screen.AddonManager.route,
+        Screen.Plugins.route,
         Screen.CatalogOrder.route,
         Screen.Collections.route,
         Screen.CollectionEditor.route,

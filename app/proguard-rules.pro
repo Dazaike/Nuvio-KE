@@ -26,6 +26,19 @@
 -keepnames class okhttp3.** extends java.lang.Throwable
 -keepnames class okio.** extends java.lang.Throwable
 
+# ── JavaScript plugin runtime ─────────────────────────────────────────────────
+# quickjs-kt binds Kotlin functions to the native engine through JNI and reflection-free type
+# converters keyed by class name; keep it whole.
+-keep class com.dokar.quickjs.** { *; }
+-keepclassmembers class com.dokar.quickjs.** { *; }
+# Gson reads TypeToken's generic signature (PluginResultParser).
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+# jsoup references optional engines it only uses when present.
+-dontwarn org.jsoup.helper.Re2jRegex
+-dontwarn com.google.re2j.**
+-dontwarn javax.script.**
+
 # ── Data classes (DTOs) ────────────────────────────────────────────────────────
 # Keep all DTO classes (Retrofit return types; reflection-free under kotlinx, kept for R8 stability)
 -keep class com.nuvio.tv.data.remote.dto.** { *; }

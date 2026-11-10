@@ -2,6 +2,7 @@ package com.nuvio.tv.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.sync.HomeCatalogOrdering
 import com.nuvio.tv.data.local.CollectionsDataStore
@@ -23,19 +24,30 @@ data class ContentPaneState(
     /** Rows the Home catalog order page lists: addon catalogs shown on Home plus collections. */
     val homeCatalogRows: Int,
     val collectionCount: Int,
+    /** Installed plugin repositories, and how many providers are switched on across them. */
+    val pluginRepositoryCount: Int = 0,
+    val pluginsOn: Int = 0,
     /** A profile using the primary's addons: the phone page edits collections only. */
     val readOnly: Boolean,
     /** As the Addon Manager's Reorder card: hidden for read-only profiles and without addon catalogs on Home. */
     val showCatalogOrder: Boolean
 )
 
-internal fun contentPaneState(addons: List<Addon>, collections: List<Collection>, readOnly: Boolean): ContentPaneState {
+internal fun contentPaneState(
+    addons: List<Addon>,
+    collections: List<Collection>,
+    readOnly: Boolean,
+    pluginRepositoryCount: Int = 0,
+    pluginsOn: Int = 0
+): ContentPaneState {
     // The catalog order page's own entries (enabled addons, search-only catalogs left out).
     val addonCatalogs = HomeCatalogOrdering.buildAddonCatalogEntries(addons).size
     return ContentPaneState(
         addonCount = addons.size,
         homeCatalogRows = addonCatalogs + collections.size,
         collectionCount = collections.size,
+        pluginRepositoryCount = pluginRepositoryCount,
+        pluginsOn = pluginsOn,
         readOnly = readOnly,
         showCatalogOrder = !readOnly && addonCatalogs > 0
     )
@@ -46,7 +58,8 @@ internal fun contentPaneState(addons: List<Addon>, collections: List<Collection>
 class ContentDiscoveryViewModel @Inject constructor(
     addonRepository: AddonRepository,
     collectionsDataStore: CollectionsDataStore,
-    profileManager: ProfileManager
+    profileManager: ProfileManager,
+    pluginManager: PluginManager
 ) : ViewModel() {
 
     /**
@@ -58,12 +71,15 @@ class ContentDiscoveryViewModel @Inject constructor(
         addonRepository.getInstalledAddons(),
         collectionsDataStore.collections,
         profileManager.profiles,
-        profileManager.activeProfileId
-    ) { addons, collections, profiles, activeId ->
+        profileManager.activeProfileId,
+        combine(pluginManager.repositories, pluginManager.scrapers) { repos, scrapers -> repos.size to scrapers.count { it.enabled } }
+    ) { addons, collections, profiles, activeId, plugins ->
         contentPaneState(
             addons = addons,
             collections = collections,
-            readOnly = AddonManagementAccess.isReadOnly(profiles.find { it.id == activeId })
+            readOnly = AddonManagementAccess.isReadOnly(profiles.find { it.id == activeId }),
+            pluginRepositoryCount = plugins.first,
+            pluginsOn = plugins.second
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 }

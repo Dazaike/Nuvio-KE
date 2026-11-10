@@ -35,14 +35,15 @@ class LegacyFeatureDataCleanupTest {
         val targets = listOf(
             filesDir.write("cs_extensions/a.cs3", 100),
             filesDir.write("cs_extensions/nested/b.cs3", 50),
+            sharedPrefsDir.write("cs3_plugin_preferences.xml", 11)
+        )
+        val survivors = listOf(
+            // The restored JavaScript plugin feature keeps its scripts and its settings stores.
             filesDir.write("plugin_code/scraper.js", 30),
             filesDir.write("plugin_code_p2/scraper.js", 20),
             dataStoreDir.write("plugin_settings.preferences_pb", 7),
             dataStoreDir.write("plugin_settings.preferences_pb.bak", 7),
             dataStoreDir.write("plugin_settings_p3.preferences_pb", 5),
-            sharedPrefsDir.write("cs3_plugin_preferences.xml", 11)
-        )
-        val survivors = listOf(
             filesDir.write("plugin_codex/keep.js", 1),
             filesDir.write("plugin_code_px/keep.js", 1),
             filesDir.write("cs_extensions_keep/keep", 1),
@@ -58,9 +59,9 @@ class LegacyFeatureDataCleanupTest {
 
         val freed = deleteLegacyFeatureFiles(filesDir, dataStoreDir, sharedPrefsDir)
 
-        assertEquals(230L, freed)
+        assertEquals(161L, freed)
         targets.forEach { assertFalse("${it.path} should be deleted", it.exists()) }
-        listOf("cs_extensions", "plugin_code", "plugin_code_p2").forEach {
+        listOf("cs_extensions").forEach {
             assertFalse("$it dir should be deleted", File(filesDir, it).exists())
         }
         survivors.forEach { assertTrue("${it.path} should survive", it.exists()) }

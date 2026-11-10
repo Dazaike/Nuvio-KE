@@ -44,14 +44,42 @@ https://github.com/user-attachments/assets/de75164a-e5c4-408c-b980-94ef0a529095
   Release groups ranked by TRaSH Guides tiers, and a stream speed test.
 - **Profiles:** PIN unlock by a D-pad combination, settings locked to the primary profile, Live TV off per profile,
   and 40 offline avatars.
+- **Plugins:** Nuvio JavaScript scraper repositories, in Settings > Content & Discovery > Plugins. Add a repository by
+  its manifest URL, switch providers on one by one, and test each against a sample title. Their streams join the
+  addons' in the same list. Providers run in a sandboxed QuickJS engine that can reach only the public internet,
+  and stay off until you allow them. See [Plugins](#plugins).
 
 ## What's gone
 
-- Plugins and scrapers, in-app debrid sign-in and the debrid library, Trakt, Simkl and MDBList. Their lists still
+- In-app debrid sign-in and the debrid library, Trakt, Simkl and MDBList. Their lists still
   arrive as addon catalogs, but nothing scrobbles: watch history lives in the app and your Nuvio account.
+- CloudStream / DEX extensions. Plugins are JavaScript only (see [Plugins](#plugins)).
 - Layout presets, watch party, ambient mode, Jellyfin and Emby, automatic subtitle sync, post-play
   recommendations, Anime Skip, crash reporting, and the IAMF and MPEG-H decoders.
 - Bengali, Croatian and Serbian (Latin). KE has 34 translations; some are only partly done.
+
+## Plugins
+
+Settings > Content & Discovery > Plugins installs **Nuvio JavaScript plugin repositories**: a `manifest.json` listing
+scrapers, each a `.js` file exporting `getStreams(tmdbId, mediaType, season, episode)`. This is the format of the
+original [NuvioTV](https://github.com/NuvioMedia/NuvioTV) and the `nuvio-providers` repositories.
+
+- **Add** a repository with its manifest URL (https, or http on your own network). Its scripts download, but every
+  provider starts **off**: the first time you enable or test one, KE asks you to confirm that it runs code from the
+  repository. **Refresh** re-downloads and keeps your switches; **Remove** deletes the scripts.
+- **Test** runs a provider on a sample movie (or the first episode of a series) and shows the streams found, the steps
+  taken and what the script printed.
+- **Streams** from enabled providers arrive in the stream list beside the addons' (one group per provider, or per
+  repository with "Group streams by repository"), with quality, size and language. Addon streams never wait for
+  plugins and never fail because of them. Providers look titles up by TMDB id, so the TMDB key under Integrations is
+  needed.
+- **Limits:** a provider gets 45 s, 64 MB of script memory and at most 100 streams; three providers run at once, at
+  background priority. A script can only fetch from public http(s) hosts (not the TV itself or your home network),
+  reads no files and sees no account or app key (not even the TMDB key; a script that needs one brings its own). Downloads are capped at 1 MB (manifest) and 2 MB (script).
+- **Data** is local to the TV and per profile: a profile that uses the primary profile's plugins sees them but cannot
+  change them. Signing out removes them with the rest of the profile data. Plugin settings are not part of the
+  account sync, so no addon or library data is touched. The app does not restore the CloudStream/DEX extension
+  type: it loads native code with the app's full privileges.
 
 ## Screenshots
 

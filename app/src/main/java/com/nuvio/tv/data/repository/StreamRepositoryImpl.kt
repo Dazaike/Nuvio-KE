@@ -6,9 +6,15 @@ import com.nuvio.tv.R
 import com.nuvio.tv.core.di.aioStreamDataUserAgent
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeAddonApiCall
+import com.nuvio.tv.core.plugin.PluginManager
+import com.nuvio.tv.core.plugin.PluginSnapshot
+import com.nuvio.tv.core.plugin.pluginAddonStreams
+import com.nuvio.tv.core.plugin.pluginGroupName
+import com.nuvio.tv.core.plugin.resolvePluginSeasonEpisode
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.stream.MissingUpstreamsTemplates
 import com.nuvio.tv.core.stream.missingUpstreamsText
+import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.mapper.gatewayErrorUpstream
 import com.nuvio.tv.data.mapper.toDomain
 import com.nuvio.tv.data.mapper.isGatewayStatusRow
@@ -34,6 +40,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import com.nuvio.tv.core.util.encodeUrlArg
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -59,6 +66,14 @@ private const val TAG = "StreamRepositoryImpl"
  */
 private const val ADDON_STREAM_FETCH_TIMEOUT_MS = 25_000L
 
+/**
+ * Plugin scrapers share one search with the addons but get their own bounds: the whole plugin phase
+ * ends after this long, and is abandoned [PLUGIN_ORPHAN_GRACE_MS] after the last viewer of the search
+ * is gone (a prefetch that waited three seconds and a screen that opens a moment later both count).
+ */
+private const val PLUGIN_SEARCH_BUDGET_MS = 75_000L
+private const val PLUGIN_ORPHAN_GRACE_MS = 10_000L
+
 /** Bounds the upstream names one gateway answer can report (untrusted input; AIOStreams sends one per upstream). */
 private const val MAX_MISSING_UPSTREAMS = 20
 
@@ -79,7 +94,9 @@ class StreamRepositoryImpl @Inject constructor(
     private val api: AddonApi,
     private val addonRepository: AddonRepository,
     private val profileManager: ProfileManager,
-    private val healthStore: AddonHealthStore
+    private val healthStore: AddonHealthStore,
+    private val pluginManager: PluginManager,
+    private val tmdbService: TmdbService
 ) : StreamRepository {
 
     /**
@@ -116,7 +133,8 @@ class StreamRepositoryImpl @Inject constructor(
 
     private data class StreamSourceConfigurationSnapshot(
         val profileId: Int,
-        val addons: List<Addon>
+        val addons: List<Addon>,
+        val plugins: PluginSnapshot
     )
 
     override fun getStreamsFromAllAddons(
@@ -133,18 +151,22 @@ class StreamRepositoryImpl @Inject constructor(
             videoId = videoId,
             season = season,
             episode = episode,
-            sourceConfiguration = buildSourceConfigurationKey(sourceConfiguration.addons)
+            sourceConfiguration = buildSourceConfigurationKey(sourceConfiguration.addons, sourceConfiguration.plugins)
         )
 
         emitAll(
             streamSearchSessions.observe(
                 key = requestKey,
                 forceRefresh = forceRefresh
-            ) {
+            ) { control ->
                 fetchStreamsFromAllSources(
+                    control = control,
                     type = type,
                     videoId = videoId,
-                    addons = sourceConfiguration.addons
+                    season = season,
+                    episode = episode,
+                    addons = sourceConfiguration.addons,
+                    plugins = sourceConfiguration.plugins
                 )
             }
         )
@@ -156,20 +178,26 @@ class StreamRepositoryImpl @Inject constructor(
             // Not first(): at cold start that reads the empty StateFlow seed and the
             // search ends with "no supported addon".
             val addons = awaitInstalledAddons(addonRepository.getInstalledAddons())
+            val plugins = pluginManager.snapshot()
 
             if (profileManager.activeProfileId.value != profileId) continue
 
             return StreamSourceConfigurationSnapshot(
                 profileId = profileId,
-                addons = addons
+                addons = addons,
+                plugins = plugins
             )
         }
     }
 
     private fun fetchStreamsFromAllSources(
+        control: StreamSearchControl,
         type: String,
         videoId: String,
-        addons: List<Addon>
+        season: Int?,
+        episode: Int?,
+        addons: List<Addon>,
+        plugins: PluginSnapshot
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         emit(NetworkResult.Loading)
         // P0 instrument: whole-scrape wall time. Grep anchor: SCRAPE_TOTAL.
@@ -181,7 +209,11 @@ class StreamRepositoryImpl @Inject constructor(
                 addon.streamRequestType(type, videoId)?.let { requestType -> addon to requestType }
             }
 
-            val attemptedAddonNames = streamAddons.map { (addon, _) -> addon.displayName }
+            // Plugins ride the same result channel as addons; they only run when a scraper is enabled for this type.
+            val pluginType = normalizePluginType(type)
+            val pluginScrapers = plugins.enabledScrapers.filter { it.supportsType(pluginType) }
+            val attemptedAddonNames = streamAddons.map { (addon, _) -> addon.displayName } +
+                pluginScrapers.map { it.name }.distinct()
             val attemptedFailures = java.util.Collections.synchronizedList(
                 mutableListOf<StreamAttemptFailure>()
             )
@@ -196,7 +228,8 @@ class StreamRepositoryImpl @Inject constructor(
                 // Track number of pending jobs; the last addon job's finally
                 // closes the channel. With no stream addons nothing would ever
                 // close it, so close up front and let the drain loop fall through.
-                val totalJobs = streamAddons.size
+                val runPlugins = pluginScrapers.isNotEmpty()
+                val totalJobs = streamAddons.size + if (runPlugins) 1 else 0
                 val completedJobs = java.util.concurrent.atomic.AtomicInteger(0)
                 if (totalJobs == 0) resultChannel.close()
 
@@ -326,6 +359,57 @@ class StreamRepositoryImpl @Inject constructor(
                     }
                 }
 
+                if (runPlugins) {
+                    launch {
+                        val pluginT0 = android.os.SystemClock.elapsedRealtime()
+                        var pluginStreamCount = 0
+                        try {
+                            // The whole plugin phase is bounded, and abandoned when the user has left the search
+                            // (no screen and no prefetch watching): scrapers must not keep a TV busy for nobody.
+                            runWhileObserved(control, PLUGIN_ORPHAN_GRACE_MS) {
+                                withTimeoutOrNull(PLUGIN_SEARCH_BUDGET_MS) {
+                                    val plan = buildPluginRequest(type, videoId, season, episode)
+                                    if (plan != null) {
+                                        val repositoriesById = if (plugins.groupByRepository) plugins.repositories.associateBy { it.id } else emptyMap()
+                                        val unknownQuality = context.getString(R.string.stream_quality_unknown)
+                                        pluginManager.executeScrapersStreaming(
+                                            tmdbId = plan.id,
+                                            mediaType = plan.mediaType,
+                                            season = plan.season,
+                                            episode = plan.episode
+                                        ).collect { (scraper, results) ->
+                                            val groupName = scraper.pluginGroupName(plugins.groupByRepository, repositoriesById)
+                                            pluginStreamCount += results.size
+                                            resultChannel.send(
+                                                pluginAddonStreams(
+                                                    scraper = scraper,
+                                                    results = results,
+                                                    groupName = groupName,
+                                                    showScraperLogo = !plugins.groupByRepository,
+                                                    unknownQualityLabel = unknownQuality
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // A plugin failure never takes the addon results down with it.
+                            if (e is CancellationException) throw e
+                            Log.w(TAG, "Plugin search failed: ${e.javaClass.simpleName}")
+                        } finally {
+                            Log.i(
+                                TAG,
+                                "PLUGIN_MS scrapers=${pluginScrapers.size} streams=$pluginStreamCount " +
+                                    "ms=${android.os.SystemClock.elapsedRealtime() - pluginT0}"
+                            )
+                            if (completedJobs.incrementAndGet() >= totalJobs) {
+                                resultChannel.close()
+                            }
+                        }
+                    }
+                }
+
                 // Emit results as they arrive, greedily draining whatever has
                 // already queued so groups that landed together share one emission.
                 // tryReceive never blocks, so a lone arrival is emitted immediately.
@@ -371,10 +455,19 @@ class StreamRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun buildSourceConfigurationKey(addons: List<Addon>): String = buildString {
+    private fun buildSourceConfigurationKey(addons: List<Addon>, plugins: PluginSnapshot): String = buildString {
         append("addons:")
         addons.forEach { addon ->
             append("|addon:").append(addon)
+        }
+        // A changed plugin set must not reuse a search session built without it. Ids and versions
+        // identify a scraper; its (untrusted) manifest text is never put in the key.
+        append("|plugins:").append(plugins.groupByRepository)
+        plugins.enabledScrapers.forEach { scraper ->
+            append("|scraper:").append(scraper.id).append("@").append(scraper.version)
+        }
+        if (plugins.groupByRepository) {
+            plugins.repositories.forEach { repo -> append("|repo:").append(repo.id).append("=").append(repo.name) }
         }
     }.sha256()
 
@@ -382,6 +475,27 @@ class StreamRepositoryImpl @Inject constructor(
         MessageDigest.getInstance("SHA-256")
             .digest(toByteArray(Charsets.UTF_8))
             .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+    private data class PluginRequest(val id: String, val mediaType: String, val season: Int?, val episode: Int?)
+
+    /**
+     * The title as scrapers expect it: a TMDB id, "movie" or "tv", and season/episode (an anime
+     * tracker id keeps its absolute episode number). Null when no TMDB id can be had, so no scraper runs.
+     */
+    private suspend fun buildPluginRequest(type: String, videoId: String, season: Int?, episode: Int?): PluginRequest? {
+        val tmdbId = tmdbService.ensureTmdbId(videoId, type)
+        if (tmdbId == null) {
+            Log.d(TAG, "No TMDB id for this title; plugins skipped")
+            return null
+        }
+        val (pluginSeason, pluginEpisode) = resolvePluginSeasonEpisode(videoId, season, episode)
+        return PluginRequest(tmdbId, normalizePluginType(type), pluginSeason, pluginEpisode)
+    }
+
+    private fun normalizePluginType(type: String): String = when (type.lowercase()) {
+        "series", "tv", "show", "tvshow" -> "tv"
+        else -> type.lowercase()
+    }
 
     private fun mergeResult(
         accumulatedResults: MutableList<AddonStreams>,

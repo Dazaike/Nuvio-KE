@@ -67,7 +67,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
             logCacheSizes()
         }
 
-        // X15: sweep leftovers of cut features (plugin runtime files, stale debrid/MDBList
+        // X15: sweep leftovers of cut features (CloudStream extension files, stale debrid/MDBList
         // keys). Idempotent by existence, so it simply runs every process start; logs one line.
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             delay(LEGACY_CLEANUP_DELAY_MS)

@@ -180,6 +180,20 @@ Copyright the Eclipse Jakarta Dependency Injection project authors.
 Apache-2.0 (`Apache-2.0.txt`). Its NOTICE file is in the APK as `META-INF/NOTICE.md`.
 Source: https://github.com/eclipse-ee4j/injection-api
 
+**quickjs-kt** 1.0.5 (`libs/quickjs-kt-android-1.0.5-nuvio.aar`: the Kotlin bindings and `libquickjs.so`, which embeds the
+QuickJS JavaScript engine by Fabrice Bellard and Charlie Gordon). Runs the JavaScript plugin scrapers.
+Copyright (c) dokar3 (bindings); QuickJS Copyright (c) 2017-2021 Fabrice Bellard, Copyright (c) 2017-2021 Charlie Gordon.
+MIT. Upstream: https://github.com/dokar3/quickjs-kt . The AAR is the build NuvioMedia/NuvioTV ships.
+
+**jsoup** 1.17.2 (HTML parsing behind the scrapers' `cheerio`), Copyright (c) 2009-2024 Jonathan Hedley and contributors.
+MIT. Source: https://github.com/jhy/jsoup
+
+**crypto-js** 4.2.0 (the `require("crypto-js")` scrapers get, from the `org.webjars.npm:crypto-js` artifact),
+Copyright (c) Evan Vosberg. MIT. Source: https://github.com/brix/crypto-js
+
+**Gson** 2.11.0 (JSON bridge of the plugin runtime), Copyright 2008 Google Inc. Apache-2.0 (`Apache-2.0.txt`).
+Source: https://github.com/google/gson
+
 ## Images
 
 **Fluent Emoji** (the bundled 3D avatar heads, `creature_*.webp`)

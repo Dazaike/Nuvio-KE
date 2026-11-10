@@ -9,12 +9,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,6 +35,49 @@ internal data class StreamSearchRequestKey(
     val episode: Int?,
     val sourceConfiguration: String
 )
+
+/**
+ * What a search's producer may know about the session it runs in: how many collectors are watching
+ * it ([observers], a prefetch counts while it collects), and a way to say the work was cut short
+ * ([markIncomplete]: the session is then dropped on completion instead of cached, so a later visit
+ * searches again instead of showing a partial answer).
+ */
+internal class StreamSearchControl(
+    val observers: StateFlow<Int>,
+    private val onIncomplete: () -> Unit
+) {
+    fun markIncomplete() = onIncomplete()
+}
+
+/**
+ * Runs [block] until it ends, but abandons it when no collector has watched the search for
+ * [graceMs] (the user left the stream screen and no prefetch is waiting): returns null then, after
+ * [StreamSearchControl.markIncomplete]. Another collector arriving within the grace keeps it running.
+ */
+internal suspend fun <T> runWhileObserved(
+    control: StreamSearchControl,
+    graceMs: Long,
+    block: suspend () -> T
+): T? = coroutineScope {
+    val work = async { block() }
+    val watcher = launch {
+        control.observers.collectLatest { count ->
+            if (count <= 0) {
+                delay(graceMs)
+                control.markIncomplete()
+                work.cancel()
+            }
+        }
+    }
+    try {
+        work.await()
+    } catch (e: CancellationException) {
+        // Our own cancel of the work is an answer of null; the caller being cancelled is not.
+        if (currentCoroutineContext().isActive && work.isCancelled) null else throw e
+    } finally {
+        watcher.cancel()
+    }
+}
 
 /**
  * Keeps a small set of source searches alive independently of UI collectors.
@@ -49,6 +99,9 @@ internal class StreamSearchSessionCache(
         val state: MutableStateFlow<Snapshot>
     ) {
         lateinit var job: Job
+        /** Collectors currently watching this session. */
+        val observers = MutableStateFlow(0)
+        @Volatile var incomplete: Boolean = false
         @Volatile var invalidated: Boolean = false
         var completedAtMs: Long? = null
         var lastSuccessfulResult: NetworkResult.Success<List<AddonStreams>>? = null
@@ -60,25 +113,30 @@ internal class StreamSearchSessionCache(
     fun observe(
         key: StreamSearchRequestKey,
         forceRefresh: Boolean,
-        producer: () -> Flow<NetworkResult<List<AddonStreams>>>
+        producer: (StreamSearchControl) -> Flow<NetworkResult<List<AddonStreams>>>
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
+        // acquireSession counts this collector in before the search can start.
         val session = acquireSession(key, forceRefresh, producer)
-        var emittedVersion = -1L
-        emitAll(
-            session.state.transformWhile { snapshot ->
-                if (snapshot.version != emittedVersion) {
-                    emittedVersion = snapshot.version
-                    emit(snapshot.result)
+        try {
+            var emittedVersion = -1L
+            emitAll(
+                session.state.transformWhile { snapshot ->
+                    if (snapshot.version != emittedVersion) {
+                        emittedVersion = snapshot.version
+                        emit(snapshot.result)
+                    }
+                    !snapshot.isComplete
                 }
-                !snapshot.isComplete
-            }
-        )
+            )
+        } finally {
+            session.observers.update { it - 1 }
+        }
     }
 
     private suspend fun acquireSession(
         key: StreamSearchRequestKey,
         forceRefresh: Boolean,
-        producer: () -> Flow<NetworkResult<List<AddonStreams>>>
+        producer: (StreamSearchControl) -> Flow<NetworkResult<List<AddonStreams>>>
     ): Session {
         var created: Session? = null
         val selected = mutex.withLock {
@@ -88,10 +146,14 @@ internal class StreamSearchSessionCache(
             if (forceRefresh) {
                 sessions.remove(key)?.cancelAndComplete()
             } else {
-                sessions[key]?.let { return@withLock it }
+                sessions[key]?.let { existing ->
+                    existing.observers.update { it + 1 }
+                    return@withLock existing
+                }
             }
 
             createSession(key, producer).also { session ->
+                session.observers.update { it + 1 }
                 sessions[key] = session
                 trimToSizeLocked()
                 created = session
@@ -105,7 +167,7 @@ internal class StreamSearchSessionCache(
 
     private fun createSession(
         key: StreamSearchRequestKey,
-        producer: () -> Flow<NetworkResult<List<AddonStreams>>>
+        producer: (StreamSearchControl) -> Flow<NetworkResult<List<AddonStreams>>>
     ): Session {
         val session = Session(
             MutableStateFlow(
@@ -118,7 +180,7 @@ internal class StreamSearchSessionCache(
         )
         session.job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                producer().collect { result ->
+                producer(StreamSearchControl(session.observers) { session.incomplete = true }).collect { result ->
                     if (result is NetworkResult.Success && result.data.isNotEmpty()) {
                         session.lastSuccessfulResult = result
                     }
@@ -163,7 +225,8 @@ internal class StreamSearchSessionCache(
         }
         mutex.withLock {
             if (sessions[key] !== session) return@withLock
-            if (session.lastSuccessfulResult != null) {
+            // A search cut short (nobody was watching) is not kept: the next visit searches afresh.
+            if (session.lastSuccessfulResult != null && !session.incomplete) {
                 session.completedAtMs = nowMs()
             } else {
                 sessions.remove(key)
